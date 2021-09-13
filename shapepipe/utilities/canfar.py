@@ -8,6 +8,11 @@ This module defines methods for managing CANFAR specific actions.
 
 """
 
+import os
+import sys
+from io import StringIO
+from contextlib import redirect_stdout
+
 try:
     import vos.commands as vosc
 except ImportError:  # pragma: no cover
@@ -17,13 +22,12 @@ else:
 
 
 class vosError(Exception):
-   """ VOS Error
+    """VOS Error
 
-   Generic error that is raised by the vosHandler.
+    Generic error that is raised by the vosHandler.
 
-   """
-
-   pass
+    """
+    pass
 
 
 class vosHandler:
@@ -51,10 +55,11 @@ class vosHandler:
         Check if VOS is correctly installed.
 
         """
-
         if import_fail:
-            raise ImportError('vos package not found, re-install ShapePipe '
-                              'with \'./install_shapepipe --vos\'')
+            raise ImportError(
+                'vos package not found, re-install ShapePipe '
+                + 'with \'./install_shapepipe --vos\''
+            )
 
     @property
     def command(self):
@@ -63,15 +68,15 @@ class vosHandler:
         This method sets the VOS command property.
 
         """
-
         return self._command
 
     @command.setter
     def command(self, value):
 
         if value not in self._avail_commands:
-            raise ValueError('vos command must be one of {}'
-                             ''.format(self._avail_commands))
+            raise ValueError(
+                f'vos command must be one of {self._avail_commands}'
+            )
 
         self._command = getattr(vosc, value)
 
@@ -81,10 +86,87 @@ class vosHandler:
         This method allows class instances to be called as functions.
 
         """
-
         try:
             self._command()
 
         except:
-            raise vosError('Error in VOs command: {}'
-                           ''.format(self._command.__name__))
+            raise vosError(
+                f'Error in VOs command: {self._command.__name__}'
+            )
+
+
+def download(source, target, verbose=False):
+    """Download file from vos.
+
+    Parameters
+    ----------
+    source : str
+        source path on vos
+    target : str
+        target path
+    verbose : bool, optional, default=False
+        verbose output if True
+
+    Returns
+    -------
+    status : bool
+        status, True/False or success/failure
+    """
+
+    cmd = 'vcp'
+
+    if not os.path.exists(target):
+        sys.argv = [cmd, source, target]
+        if verbose:
+            print(f'Downloading file {source} to {target}...')
+        vcp = vosHandler(cmd)
+
+        vcp()
+        if verbose:
+            print('Download finished.')
+    else:
+        if verbose:
+            print(f'Target file {target} exists, skipping download.')
+
+
+def dir_list(path, verbose=False):
+    """list
+
+    List content of path on vos
+
+    Parameters
+    ----------
+    path : str
+        path on vos, starts with 'vos:cfis/...'
+    verbose : bool, optional, default=False
+        verbose output if True
+
+    Raises
+    ------
+    HTTPError, KeyError
+
+    Returns
+    -------
+    vls_out : array of str
+        file or directory at path
+    """
+
+    cmd = 'vls'
+    sys.argv = [cmd, path]
+    vls = vosHandler(cmd)
+
+    if verbose:
+        print('Getting vos directory content from vls...')
+
+    f = StringIO()
+
+    try:
+        with redirect_stdout(f):
+            vls()
+    except:
+        print('Error during vls command')
+        raise
+
+    vls_out = f.getvalue()
+
+    return vls_out.split('\n')

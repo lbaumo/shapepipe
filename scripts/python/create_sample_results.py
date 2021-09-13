@@ -17,7 +17,7 @@ import copy
 import io
 from contextlib import redirect_stdout
 from optparse import OptionParser
-import cfis
+from shapepipe.utilities import cfis
 from shapepipe.utilities.file_system import mkdir
 
 
@@ -35,6 +35,7 @@ def params_default():
     """
 
     p_def = cfis.param(
+        psf = 'mccd'
     )
 
     return p_def
@@ -52,7 +53,7 @@ def parse_options(p_def):
     -------
     options: tuple
         Command line options
-    args: string
+    args: str
         Command line string
     """
 
@@ -60,14 +61,46 @@ def parse_options(p_def):
     parser = OptionParser(usage=usage)
 
     # I/O
-    parser.add_option('', '--input_IDs', dest='input_IDs', type='string',
-         help='input tile ID file specifying sample')
-    parser.add_option('-i', '--input_dir', dest='input_dir', type='string',
-         help='input directory name')
-    parser.add_option('-o', '--output_dir', dest='output_dir', type='string',
-         help='output directory name')
+    parser.add_option(
+        '',
+        '--input_IDs',
+        dest='input_IDs',
+        type='string',
+        help='input tile ID file specifying sample'
+    )
+    parser.add_option(
+        '-i',
+        '--input_dir',
+        dest='input_dir',
+        type='string',
+        help='input directory name'
+    )
+    parser.add_option(
+        '-o',
+        '--output_dir',
+        dest='output_dir',
+        type='string',
+        help='output directory name'
+    )
 
-    parser.add_option('-v', '--verbose', dest='verbose', action='store_true', help='verbose output')
+    # Misc
+    parser.add_option(
+        '-p',
+        '--psf',
+        dest='psf',
+        type='string',
+        default=p_def.psf,
+        help=f'PSF model, one in [\'psfex\'|\'mccd\'], default=\'{p_def.psf}\''
+    )
+
+    # Control
+    parser.add_option(
+        '-v',
+        '--verbose',
+        dest='verbose',
+        action='store_true',
+        help='verbose output'
+    )
 
     options, args = parser.parse_args()
 
@@ -139,14 +172,14 @@ def read_ID_list(input_ID_path, verbose=False):
 
     Parameters
     ----------
-    input_ID_path: string
+    input_ID_path: str
         input ID file path
     verbose: bool, optional, default=False
         verbose output if True
 
     Returns
     -------
-    input_IDs: list of strings
+    input_IDs: list of str
         input ID list
     """
 
@@ -169,13 +202,13 @@ def create_links(input_dir, output_dir, input_IDs, result_base_names, verbose=Fa
 
     Parameters
     ----------
-    input_dir: string
+    input_dir: str
         input directory
-    output_dir: string
+    output_dir: str
         output directory
-    input_IDs: list of strings
+    input_IDs: list of str
         tile ID list
-    results_base_names: list of strings
+    results_base_names: list of str
         file base names
     verbose: bool, optional, default=False
         verbose output if True
@@ -244,8 +277,18 @@ def main(argv=None):
 
     input_IDs = read_ID_list(param.input_IDs, verbose=param.verbose)
 
-    result_base_names = ['psfex', 'psfex_interp_exp', 'setools_mask', 'setools_stat', 'setools_plot',
-                         'pipeline_flag', 'final_cat', 'logs']
+    result_base_names = [
+        'final_cat',
+        'logs',
+        'setools_mask',
+        'setools_stat',
+        'setools_plot',
+        'pipeline_flag',
+    ]
+    if param.psf == 'psfex':
+        result_base_names.append('psfex_interp_exp')
+    elif param.psf == 'mccd':
+        result_base_names.append('mccd_fit_val_runner')
 
     if os.path.isdir(param.output_dir):
         if param.verbose:
