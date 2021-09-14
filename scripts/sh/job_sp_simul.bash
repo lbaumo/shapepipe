@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Name: job_sp_simul.bash
-# Description: Script to process one or more simulated tiles
+# Description: General script to process one or more tiles
 #              with all contributing exposures.
 #              This works as job submission script for
 #              the canfar batch system.
@@ -12,14 +12,24 @@
 #       v1.1 01/2021
 # Package: shapepipe
 
+
+# VM home, required for canfar run.
+## On other machines set to $HOME
+export VM_HOME=/home/ubuntu
+if [ ! -d "$VM_HOME" ]; then
+    export VM_HOME=$HOME
+fi
+
 # Command line arguments
 ## Default values
 do_env=0
-job=254
-RESULTS=results_simul
-psf='psfex'
+job=255
+#config_dir='vos:cfis/cosmostat/kilbinger/cfis'
+config_dir=$VM_HOME/shapepipe/example/cfis
+psf='mccd'
 retrieve='vos'
-nsh_step=4500
+results='cosmostat/kilbinger/results_v1'
+nsh_step=3200
 nsh_max=-1
 nsh_jobs=8
 
@@ -37,12 +47,14 @@ usage="Usage: $(basename "$0") [OPTIONS] TILE_ID_1 [TILE_ID_2 [...]]
    \t  32: shapes and morphology (offline)\n
    \t  64: paste catalogues (offline)\n
    \t 128: upload results (online)\n
-   -o, --output OUTPUT\n
-    \toutput subdirectory in vos:cfis/cosmostat/kilbinger for result files, default=$RESULTS
+   -c, --config_dir DIR\n
+   \t config file directory, default='$config_dir'\n
    -p, --psf MODEL\n
     \tPSF model, one in ['psfex'|'mccd'], default='$psf'\n
    -r, --retrieve METHOD\n
    \tmethod to retrieve images, one in ['vos'|'symlink]', default='$retrieve'\n
+   -o, --output_dir\n
+   \toutput (upload) directory on vos:cfis, default='$results'\n
    --nsh_jobs NJOB\n
    \tnumber of shape measurement parallel jobs, default=$nsh_jobs\n
    --nsh_step NSTEP\n
@@ -76,8 +88,8 @@ while [ $# -gt 0 ]; do
       job="$2"
       shift
       ;;
-    -o|--output)
-      RESULTS="$2"
+    -c|--config_dir)
+      config_dir="$2"
       shift
       ;;
     -p|--psf)
@@ -86,6 +98,10 @@ while [ $# -gt 0 ]; do
       ;;
     -r|--retrieve)
       retrieve="$2"
+      shift
+      ;;
+    -o|--output_dir)
+      results="$2"
       shift
       ;;
     --nsh_max)
@@ -109,7 +125,7 @@ done
 
 ## Check options
 if [ "$psf" != "psfex" ] && [ "$psf" != "mccd" ]; then
-  echo "PSF (option -p) needs to be 'psf' or 'mccd'"
+  echo "PSF (option -p) needs to be 'psfex' or 'mccd'"
   exit 2
 fi
 n_tile=${#TILE_ARR[@]}
@@ -126,15 +142,11 @@ export ID=`echo ${TILE_ARR[@]} | tr ' ' '_'`
 
 ## Paths
 
-# VM home, required for canfar run.
-# On other machines set to $HOME
-export VM_HOME=/home/ubuntu
-if [ ! -d "$VM_HOME" ]; then
-    export VM_HOME=$HOME
-fi
-
 # SExtractor library bug work-around
 export PATH="$PATH:$VM_HOME/bin"
+
+# Results upload subdirectory on vos
+RESULTS=results_$psf
 
 ## Path variables used in shapepipe config files
 
@@ -142,9 +154,8 @@ export PATH="$PATH:$VM_HOME/bin"
 export SP_RUN=`pwd`
 
 # Config file path
-CONFIG_BASE=cfis_simul
-export SP_CONFIG=$SP_RUN/$CONFIG_BASE
-export SP_CONFIG_MOD=$SP_RUN/${CONFIG_BASE}_mod
+export SP_CONFIG=$SP_RUN/cfis
+export SP_CONFIG_MOD=$SP_RUN/cfis_mod
 
 ## Other variables
 
@@ -157,7 +168,7 @@ OUTPUT=$SP_RUN/output
 # For tar archives
 output_rel=`realpath --relative-to=. $OUTPUT`
 
-# Stop on error
+# Stop on error, default=1
 STOP=1
 
 # Verbose mode (1: verbose, 0: quiet)
@@ -219,7 +230,6 @@ command_sp() {
    cmd=$1
    str=$2
 
-   #STOP=0
    command "$1" "$2"
    #res=$?
    #if [ $res != 0 ]; then
@@ -239,6 +249,7 @@ function upload() {
    shift
    upl=("$@")
 
+   echo "Counting upload files"
    n_upl=(`ls -l ${upl[@]} | wc`)
    if [ $n_upl == 0 ]; then
       if [ $STOP == 1 ]; then
@@ -247,7 +258,7 @@ function upload() {
       fi
    fi
    tar czf ${base}_${ID}.tgz ${upl[@]}
-   command "$VCP ${base}_${ID}.tgz vos:cfis/cosmostat/kilbinger/$RESULTS" "Upload log tar ball"
+   command "$VCP ${base}_${ID}.tgz vos:cfis/$results" "Upload tar ball"
 }
 
 # Upload log files
@@ -273,8 +284,6 @@ function print_env() {
    echo "Other variables:"
    echo " VCP=$VCP"
    echo " CERTFILE=$CERTFILE"
-   echo " STOP=$STOP"
-   echo " verbose=$VERBOSE"
    echo "***"
 }
 
@@ -287,9 +296,9 @@ if [ "$CONDA_DEFAULT_ENV" != "shapepipe" ]; then
   source $VM_HOME/miniconda3/bin/activate shapepipe
 fi
 
-print_env
 
 if [ $do_env == 1 ]; then
+   print_env
    echo "Exiting"
    return
 fi
@@ -303,7 +312,6 @@ mkdir -p $SP_RUN
 cd $SP_RUN
 mkdir -p $OUTPUT
 
-
 # Processing
 
 ## Retrieve config files and images (online if retrieve=vos)
@@ -316,10 +324,16 @@ if [[ $do_job != 0 ]]; then
     echo $TILE >> $TILE_NUMBERS_PATH
   done
 
-  ### Download config files
-  command_sp "$VCP vos:cfis/cosmostat/kilbinger/cfis ." "Get shapepipe config files"
+  ### Retrieve config files
+  if [[ $config_dir == *"vos:"* ]]; then
+    command_sp "$VCP $config_dir ." "Retrieve shapepipe config files"
+  else
+    if [[ ! -L cfis ]]; then
+      command_sp "ln -s $config_dir cfis" "Retrieve shapepipe config files"
+    fi
+  fi
 
-  ### Get tiles
+  ### Retrieve tiles
   command_sp "shapepipe_run -c $SP_CONFIG/config_get_tiles_$retrieve.ini" "Run shapepipe (get tiles)"
 
   ### Find exposures
@@ -334,13 +348,6 @@ fi
 (( do_job= $job & 2 ))
 if [[ $do_job != 0 ]]; then
 
-  # The following call will result in an VOS error if the directory already exists.
-  # This can be ignored.
-  vmkdir vos:cfis/cosmostat/kilbinger/$RESULTS
-
-  ### Download config files
-  command_sp "$VCP vos:cfis/cosmostat/kilbinger/$CONFIG_BASE ." "Get shapepipe config files from $CONFIG_BASE"
-
   ### Uncompress tile weights
   #command_sp "shapepipe_run -c $SP_CONFIG/config_unfz_w.ini" "Run shapepipe (uncompress tile weights)"
 
@@ -348,6 +355,7 @@ if [[ $do_job != 0 ]]; then
   #command_sp "shapepipe_run -c $SP_CONFIG/config_exp_SpMh.ini" "Run shapepipe (split images, merge headers)"
 
   command_sp "shapepipe_run -c $SP_CONFIG/config_exp_unfz_w.ini" "Run shapepipe (uncompress exposure weights)"
+
 fi
 
 ## Mask tiles and exposures: add star, halo, and Messier object masks (online)
@@ -374,21 +382,21 @@ if [[ $do_job != 0 ]]; then
   STOP=1
 
   ### The following are very a bad hacks to get additional input file paths
+  echo "Looking for PSF ($psf) output files"
   if [ "$psf" == "psfex" ]; then
-    input_psfex=`find . -name star_split_ratio_80-*.psf | head -n 1`
+    input_psfex=`ls -1 ./output/*/psfex_runner/output/star_split_ratio_80*.psf | head -n 1`
     command_sp "ln -s `dirname $input_psfex` input_psfex" "Link psfex output"
   else
     input_psf_mccd=`find . -name "fitted_model*.npy" | head -n 1`
     command_sp "ln -s `dirname $input_psf_mccd` input_psf_mccd" "Link MCCD output"
   fi
 
-  input_split_exp=`find /cfis/ShapePipe/output/singles -name weight-*.fits | head -n 1`
+  echo "Looking for single-exposure single-HDU output files"
+  input_split_exp=`ls -1 ./output/*/split_exp_runner/output/flag*.fits | head -n 1`
   command_sp "ln -s `dirname $input_split_exp` input_split_exp" "Link split_exp output"
 
-  input_mask_exp=`find output/run_sp_exp_Ma_* -name pipeline_flag-*-*.fits | head -n 1`
-  command_sp "ln -s `dirname $input_mask_exp` input_mask_exp" "Link mask_exp output"
-
-  input_sextractor=`find . -name sexcat_sexcat-*.fits | head -n 1`
+  echo "Looking for SExtractor output files"
+  input_sextractor=`ls -1 ./output/*/sextractor_runner/output/sexcat_sexcat*.fits | head -n 1`
   command_sp "ln -s `dirname $input_sextractor` input_sextractor" "Link sextractor output"
 
 fi
@@ -459,32 +467,32 @@ if [[ $do_job != 0 ]]; then
   ### module and pipeline log files
   upload_logs "$ID" "$VERBOSE"
 
+  ### Final shape catalog
+  ### pipeline_flags are the tile masks, for random cats
+  ### SETools masks (selection), stats and plots
   ### ${psf}_interp_exp for diagnostics, validation with leakage,
   ### validation with residuals, rho stats
-  ### SETools masks (selection), stats and plots
-  ### pipeline_flags are the tile masks, for random cats
-  ### Final shape catalog
 
   NAMES=(
+    "final_cat"
+    "pipeline_flag"
     "setools_mask"
     "setools_stat"
     "setools_plot"
-    "pipeline_flag"
-    "final_cat"
   )
   DIRS=(
+    "*/make_catalog_runner/output"
+    "*/mask_runner/output"
     "*/setools_runner/output/mask"
     "*/setools_runner/output/stat"
     "*/setools_runner/output/plot"
-    "*/mask_runner/output"
-    "*/make_catalog_runner/output"
   )
   PATTERNS=(
-    "*"
-    "*"
-    "*"
-    "pipeline_flag-???-???*"
     "final_cat-*"
+    "pipeline_flag-???-???*"
+    "*"
+    "*"
+    "*"
   )
 
   # PSF validation

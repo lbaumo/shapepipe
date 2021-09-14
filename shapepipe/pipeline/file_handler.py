@@ -950,15 +950,6 @@ class FileHandler(object):
                 + f'"{ext}" in the directories {dir_list}.'
             )
 
-<<<<<<< HEAD
-        duplicate = check_duplicate(final_file_list)
-        if duplicate!= '':
-            raise RuntimeError('Input file list contains at least two elements \'{}\' that match '
-                               'file pattern and numbering scheme, leading to identical '
-                               'input files.  Make sure that the correct input '
-                               'directory is used.'
-                               ''.format(duplicate))
-=======
         if check_duplicate(final_file_list):
             raise RuntimeError(
                 'Input file list contains at least two elements that match '
@@ -966,7 +957,6 @@ class FileHandler(object):
                 + 'input files.  Make sure that the correct input '
                 + 'directory is used.'
             )
->>>>>>> mk_fork/v1
 
         # Save file list
         np.save(output_file, np.array(final_file_list))
