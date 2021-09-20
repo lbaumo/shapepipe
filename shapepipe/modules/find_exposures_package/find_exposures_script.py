@@ -90,7 +90,7 @@ class FindExposures():
             temp = h.split(' ')
 
             pattern = r'(.*)\.{1}.*'
-            m = re.search(pattern, temp[3])
+            m = re.search(pattern, temp[2])
             if not m:
                 raise IndexError(
                     f're match \'{pattern}\' failed for filename \'{temp[3]}\''

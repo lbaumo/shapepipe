@@ -346,7 +346,7 @@ fi
 if [[ $do_job != 0 ]]; then
 
   ### Uncompress tile weights
-  command_sp "shapepipe_run -c $SP_CONFIG/config_unfz_w.ini" "Run shapepipe (uncompress tile weights)"
+  #command_sp "shapepipe_run -c $SP_CONFIG/config_unfz_w.ini" "Run shapepipe (uncompress tile weights)"
 
   ### Split images into single-HDU files, merge headers for WCS info
   command_sp "shapepipe_run -c $SP_CONFIG/config_exp_SpMh.ini" "Run shapepipe (split images, merge headers)"
